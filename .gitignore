@@ -4,16 +4,17 @@ Thumbs.db
 
 # Python
 .venv/
+__pycache__/
+*.pyc
+*.pyo
 
 # Node
 web/node_modules/
 web/dist/
 
-# Helios
+# Helios outputs
 *-run-*.html
 helios.egg-info/
-__pycache__/
-*.pyc
 
 # IDE
 .idea/

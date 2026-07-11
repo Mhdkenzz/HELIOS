@@ -6,105 +6,122 @@ Lightweight watchdog + replay tool for AI coding agents.
 
 ---
 
-## Quick Start (15 seconds)
+## Quick Start (30 seconds)
 
 ```bash
-# Install
-pip install helios
+# 1. Clone & install
+pip install -e ".[dev]"
+cd web && npm install && cd ..
 
-# Run your agent under Helios
+# 2. Go to a git repo and run your agent under Helios
+cd ~/my-project
 helios run -- your-agent-command --arg value
 
-# Open the dashboard (live or after the run)
-helios dashboard
+# 3. Watch the live dashboard (opens automatically)
+#    → http://localhost:6767
 
-# Open the generated replay file in your browser
-open run-*.html
+# 4. When done, a standalone HTML replay is saved:
+#    run-20250711-143022.html
 ```
 
 That's it. Helios will:
 
-1. Take a **git-level snapshot** of your repo
-2. **Record** every shell command, file change, Git diff, and test output
-3. **Stream** a live timeline to the dashboard at `http://localhost:6767`
-4. **Export** a self-contained HTML replay file you can share or archive
+| Step | What happens |
+|------|-------------|
+| `helios run -- <cmd>` | Tags the current commit as `helios-<iso-utc>` |
+| During run | Shell I/O, file CRUD, and CPU/RAM are captured via a thread-safe event bus |
+| Dashboard | WebSocket streams events to a React timeline at `localhost:6767` |
+| Exit | Auto-generates a **self-contained HTML replay** file |
+| Rollback | `git reset --hard <tag>` + `git clean -fdx`, guarded against `package.json`/`LICENSE` overwrite |
 
----
+## Cross-Platform Notes
+
+| Platform | Notes |
+|----------|-------|
+| **Linux** | Full support — uses PTY for terminal I/O |
+| **macOS** | Full support — uses PTY for terminal I/O |
+| **Windows** | Subprocess fallback (no PTY); file watcher still works |
 
 ## Architecture
 
 ```
 helios/
-├── cli/              # Typer CLI entrypoint
-│   └── main.py       # helios run | helios dashboard
-├── core/
-│   ├── __init__.py
-│   ├── snapshot.py   # Git snapshot + rollback with file-protect guards
-│   └── recorder.py   # Async event bus, shell tracer, fs watcher, metrics
-├── web/              # React + Vite + Tailwind dashboard
+├── cli.py                  # Typer CLI: helios run | helios dashboard
+├── schemas.py              # Pydantic event & snapshot models
+├── snapshot.py             # Git snapshot + guarded rollback
+├── recorder.py             # Event bus, PTY tracer, watchdog watcher, metrics
+├── backend.py              # FastAPI: /ws, /diff, /rollback, static frontend
+├── web/
 │   ├── index.html
 │   ├── src/
-│   │   ├── main.tsx  # Entry point
-│   │   └── App.tsx   # Timeline UI with WebSocket stream
+│   │   ├── main.tsx        # Entry point
+│   │   └── App.tsx         # Timeline + diff modal + restore bar
 │   ├── package.json
 │   ├── vite.config.ts
 │   ├── tailwind.config.ts
 │   └── tsconfig.json
 ├── tests/
-│   └── test_helios.py
-├── Dockerfile
-├── docker-compose.yml
-├── pyproject.toml
+│   └── test_helios.py      # Pytest integration (CI on ubuntu/mac/windows)
+├── Makefile
+├── Dockerfile + docker-compose.yml
 └── README.md
 ```
 
-## How It Works
+## Dev Commands
 
-| Step | What happens |
-|------|-------------|
-| `helios run -- <cmd>` | Snapshots current git state (stash or tag), starts fs watcher + metrics sampler |
-| During run | Shell I/O, file CRUD events, and resource usage are captured via an async event bus |
-| Dashboard | WebSocket streams events to a React timeline UI with "Restore to this point" button |
-| Exit | Auto-generates a standalone `run-YYYYMMDD-HHMMSS.html` replay file |
-| Rollback | `git reset --hard` + guard that refuses to overwrite `package.json` or `LICENSE` |
+```bash
+make dev          # backend (uvicorn --reload) + frontend (vite dev)
+make install      # pip install -e ".[dev]" + npm install
+make test         # pytest tests/ -v
+make lint         # syntax check
+make clean        # remove caches
+```
+
+Or manually:
+```bash
+# Terminal 1 — backend + hot-reload
+uvicorn helios.cli:app --reload --port 6767
+
+# Terminal 2 — frontend
+cd web && npm run dev
+```
+
+## Event Schema
+
+Every event is a small JSON object:
+
+```json
+{ "ts": 1752234567.123, "type": "cmd"|"file"|"alert"|"system", "body": { ... } }
+```
+
+| Type  | Body fields                              | Example |
+|-------|------------------------------------------|---------|
+| `cmd` | `command`, `output`, `exit_code`, `elapsed_s`, `mode` | `{"command":"npm test","exit_code":0}` |
+| `file`| `action`, `path` (or `from`/`to`)        | `{"action":"modified","path":"src/app.tsx"}` |
+| `alert`| `msg`                                   | `{"msg":"disk > 90%"}` |
+| `system`| `msg`                                  | `{"msg":"recorder.start"}` |
 
 ## Constraints
 
-- **Pure local** — no external telemetry, no cloud uploads
-- **≤ 200 MB RAM** idle footprint
+- **Pure local** — no telemetry, no cloud uploads
+- **≤ 200 MB RAM** idle
+- **Zero native deps** — pure Python + Node
 - **MIT licensed**
-- Linux/macOS only for v0.1 (Windows parking lot)
-
-## Dev Setup
-
-```bash
-# Clone & install dev deps
-pip install -e ".[dev]"
-
-# Install frontend deps
-cd web && npm install && cd ..
-
-# Run tests
-pytest tests/ -v
-
-# Dev mode (backend + frontend)
-helios run -- your-command-here  # terminal 1
-helios dashboard                 # terminal 2 → http://localhost:6767
-```
 
 ## Docker
 
 ```bash
 docker compose up --build
+# Backend on :6767, frontend on :5173
 ```
 
 ## Stretch Goals (parking lot)
 
 - [ ] GPU/RAM charts in dashboard
-- [ ] VS Code extension for one-click replay
+- [ ] VS Code extension
 - [ ] Signed snapshots (GPG/SSH)
-- [ ] Windows support
-- [ ] Binary distribution (PyInstaller / Nuitka)
+- [ ] Windows PTY support
+- [ ] Binary distribution
 
 ---
 
