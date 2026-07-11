@@ -200,6 +200,19 @@ def create_app(
     async def get_info() -> JSONResponse:
         return JSONResponse({"app": "helios", "version": version()})
 
+    # ── Config endpoint (theme, branding) ──────────────────────────────────
+
+    @app.get("/config")
+    async def get_config() -> JSONResponse:
+        return JSONResponse(
+            {
+                "theme": config.get("theme", "dark"),
+                "accent_color": config.get("accent_color", "#60a5fa"),
+                "font_family": config.get("font_family", "JetBrains Mono, Fira Code, monospace"),
+                "debounce_ms": config.get("debounce_ms", 50),
+            }
+        )
+
     # ── Embedded frontend ──────────────────────────────────────────────────
 
     @app.get("/", response_class=HTMLResponse)
