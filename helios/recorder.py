@@ -5,18 +5,23 @@ Helios Recorder — Event bus, subprocess tracer, file watcher, and metrics samp
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import resource
 import shlex
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
 
+import psutil
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .schemas import Event
+
+logger = logging.getLogger(__name__)
 
 # ── Configuration ──────────────────────────────────────────────────────────
 
@@ -64,12 +69,14 @@ class EventBus:
     """Thread-safe event bus with sync + async publish support."""
 
     _lock: asyncio.Lock
+    _thread_lock: threading.Lock
     _callbacks: list[Callable[[Event], None]]
     _history: list[Event]
     _loop: asyncio.AbstractEventLoop | None
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
+        self._thread_lock = threading.Lock()
         self._callbacks = []
         self._history = []
         self._loop = None
@@ -79,10 +86,13 @@ class EventBus:
         self._loop = loop
 
     def subscribe(self, callback: Callable[[Event], None]) -> None:
-        self._callbacks.append(callback)
+        with self._thread_lock:
+            if callback not in self._callbacks:
+                self._callbacks.append(callback)
 
     def unsubscribe(self, callback: Callable[[Event], None]) -> None:
-        self._callbacks.remove(callback)
+        with self._thread_lock:
+            self._callbacks.remove(callback)
 
     async def publish(self, event: Event) -> None:
         """Async publish — appends to history and dispatches to callbacks."""
@@ -90,21 +100,24 @@ class EventBus:
             cbs = list(self._callbacks)
             self._history.append(event)
         for cb in cbs:
-            cb(event)
+            try:
+                cb(event)
+            except Exception:
+                logger.exception("EventBus async callback failed")
 
     def publish_sync(self, event: Event) -> None:
         """Sync publish — safe to call from any thread.
 
         Appends to history synchronously and dispatches callbacks.
         """
-        self._history.append(event)
-        # Copy under a threading lock would require an async lock which
-        # isn't available from sync context, so we dispatch directly.
-        for cb in list(self._callbacks):
+        with self._thread_lock:
+            self._history.append(event)
+            cbs = list(self._callbacks)
+        for cb in cbs:
             try:
                 cb(event)
             except Exception:
-                pass
+                logger.exception("EventBus sync callback failed")
 
     def history(self) -> list[Event]:
         return list(self._history)
@@ -151,7 +164,7 @@ class _WatchHandler(FileSystemEventHandler):
             self._emit("moved", event)
 
 
-# ── Subprocess runner ──────────────────────────────────────────────────────
+# ── Subprocess runner (sync) ───────────────────────────────────────────────
 
 def _run_process_sync(
     args: list[str],
@@ -184,13 +197,35 @@ def _run_process_sync(
         bufsize=1,
     )
 
-    # Stream output line-by-line
+    # Stream output line-by-line and sample metrics
     assert proc.stdout is not None
+    peak_rss_mb = 0.0
+    cpu_samples: list[float] = []
+
+    try:
+        p = psutil.Process(proc.pid)
+    except psutil.NoSuchProcess:
+        p = None
+
     for line in proc.stdout:
         bus.publish_sync(Event(type="cmd", body={"output": line.rstrip("\n")}))
+        # Sample RSS
+        if p is not None:
+            try:
+                mem = p.memory_info().rss / 1e6
+                peak_rss_mb = max(peak_rss_mb, mem)
+                cpu_samples.append(p.cpu_percent(interval=0.0))
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
 
     exit_code = proc.wait()
     elapsed = time.monotonic() - t0
+
+    mean_cpu = (
+        (sum(cpu_samples) / len(cpu_samples))
+        if cpu_samples
+        else 0.0
+    )
 
     bus.publish_sync(
         Event(
@@ -199,8 +234,8 @@ def _run_process_sync(
                 "command": args[0],
                 "exit_code": exit_code,
                 "elapsed_s": round(elapsed, 3),
-                "peak_rss_mb": 0.0,
-                "mean_cpu_pct": 0.0,
+                "peak_rss_mb": round(peak_rss_mb, 1),
+                "mean_cpu_pct": round(mean_cpu, 1),
             },
         )
     )
@@ -208,8 +243,8 @@ def _run_process_sync(
     return {
         "exit_code": exit_code,
         "elapsed_s": round(elapsed, 3),
-        "peak_rss_mb": 0.0,
-        "mean_cpu_pct": 0.0,
+        "peak_rss_mb": round(peak_rss_mb, 1),
+        "mean_cpu_pct": round(mean_cpu, 1),
     }
 
 
@@ -279,11 +314,10 @@ class Recorder:
         bus: EventBus,
         env: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        import resource
-
         _check_command(" ".join(args))
         t0 = time.monotonic()
         cpu_samples: list[float] = []
+        peak_rss_mb = 0.0
 
         merged_env: dict[str, str] = {}
         merged_env.update(os.environ)
@@ -299,21 +333,30 @@ class Recorder:
         )
 
         assert proc.stdout is not None
+
+        # Try to wrap the subprocess PID with psutil for metrics
+        try:
+            p = psutil.Process(proc.pid) if proc.pid else None
+        except psutil.NoSuchProcess:
+            p = None
+
         async for line in proc.stdout:
             decoded = line.decode(errors="replace").rstrip("\n")
             await bus.publish(Event(type="cmd", body={"output": decoded}))
-            try:
-                usage = resource.getrusage(resource.RUSAGE_CHILDREN)
-                cpu_samples.append(usage.ru_utime + usage.ru_stime)
-            except Exception:
-                pass
+            if p is not None:
+                try:
+                    mem = p.memory_info().rss / 1e6
+                    peak_rss_mb = max(peak_rss_mb, mem)
+                    cpu_samples.append(p.cpu_percent(interval=0.0))
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
 
         exit_code = await proc.wait()
         elapsed = time.monotonic() - t0
-        peak_mb = 0.0
+
         mean_cpu = (
-            (sum(cpu_samples) / elapsed) * 100
-            if elapsed > 0 and cpu_samples
+            (sum(cpu_samples) / len(cpu_samples))
+            if cpu_samples
             else 0.0
         )
 
@@ -324,7 +367,7 @@ class Recorder:
                     "command": args[0],
                     "exit_code": exit_code,
                     "elapsed_s": round(elapsed, 3),
-                    "peak_rss_mb": round(peak_mb, 1),
+                    "peak_rss_mb": round(peak_rss_mb, 1),
                     "mean_cpu_pct": round(mean_cpu, 1),
                 },
             )
@@ -333,7 +376,7 @@ class Recorder:
         return {
             "exit_code": exit_code,
             "elapsed_s": round(elapsed, 3),
-            "peak_rss_mb": round(peak_mb, 1),
+            "peak_rss_mb": round(peak_rss_mb, 1),
             "mean_cpu_pct": round(mean_cpu, 1),
         }
 

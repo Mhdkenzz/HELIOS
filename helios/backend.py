@@ -5,6 +5,7 @@ Helios Backend — FastAPI server with WebSocket streaming, diff, and rollback.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,6 +18,8 @@ from starlette.middleware.cors import CORSMiddleware
 from . import version
 from .recorder import EventBus
 from .schemas import Event
+
+logger = logging.getLogger(__name__)
 from .snapshot import SnapshotManager, TAG_RE
 
 
@@ -88,7 +91,7 @@ def create_app(
             try:
                 loop.call_soon_threadsafe(q.put_nowait, event)
             except Exception:
-                pass
+                logger.exception("WebSocket broadcast failed")
 
     # Subscribe the broadcaster to the event bus
     bus.subscribe(_broadcast)
