@@ -5,6 +5,26 @@ All notable changes to Helios are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-12
+
+### Added
+- Real-time metrics via `psutil` — RSS memory and CPU sampling in both sync and async command runners
+- Windows PTY support via `pywinpty>=1.1` (auto-enabled on Windows)
+- Thread-safe `EventBus` with `threading.Lock` for sync path and idempotent `subscribe()`
+- Full documentation site: `docs/` with install, architecture, usage, config, plugin API, troubleshooting, FAQ, contributing guides
+- CI release workflow: auto-publishes wheel/sdist to PyPI on tag push and creates GitHub Release with notes
+- `_upload_pypi.py` helper script for manual PyPI uploads
+
+### Changed
+- Upgrade dependencies: `fastapi>=0.111`, `uvicorn[standard]>=0.30`, `websockets>=12`, `watchdog>=4.0`, `pydantic>=2.5`
+- Moved `pywinpty` from optional extra to platform-specific main dependency
+
+### Fixed
+- Removed `starlette` direct dependency (was redundant)
+- Deprecation warning: replaced `@app.on_event("startup")` with `@asynccontextmanager` lifespan in `backend.py`
+- Protect `license`, `readme` fields in `SnapshotManager` rollback guard
+- Updated docs for Rollback and Version APIs to match current schema
+
 ## [0.2.0] - 2026-07-12
 
 ### Added
@@ -16,7 +36,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Path traversal guard on `/diff` endpoint
 - Dashboard branding via `helios.toml` (theme, accent color, logo, font)
 - `helios.toml.example` with documented examples for all config options
-- PR labeler workflow (`.github/labeler.yml`)
 - Multi-platform CI: Ubuntu, macOS, Windows + Python 3.10–3.12
 
 ### Changed
