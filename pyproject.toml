@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "helios"
 version = "0.2.0"
-description = "Lightweight watchdog + replay tool for AI coding agents"
+description = "Lightweight watchdog replay tool for AI coding agents"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
