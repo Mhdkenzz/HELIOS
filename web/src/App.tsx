@@ -291,16 +291,14 @@ export default function App() {
     setRollbackError(null);
     setRollbackResult(null);
     try {
-      const resp = await fetch("/rollback", {
+      const resp = await fetch(`/rollback?tag=${encodeURIComponent(selectedTag)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tag: selectedTag }),
       });
       const json = await resp.json();
       if (json.status === "error") {
         setRollbackError(json.message);
       } else {
-        setRollbackResult(`\u2713 Rolled back. New HEAD: ${json.head}`);
+        setRollbackResult(`\u2713 Rolled back to ${selectedTag}`);
       }
     } catch (e) {
       setRollbackError("Network error during rollback.");

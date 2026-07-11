@@ -5,6 +5,22 @@ All notable changes to Helios are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.3.1] - 2026-07-12
+
+### Fixed
+- **P0:** File-event debouncer now flushes pending events on `Recorder.stop()` — prevents lost file events at run end
+- **P0:** Frontend rollback sends tag as query param (`?tag=...`) instead of JSON body — matches backend route handler
+- **P0:** Frontend rollback displays `selectedTag` instead of nonexistent `json.head` field
+- **P0:** Added `GET /config` endpoint serving theme, accent_color, font_family, debounce_ms to frontend
+- **P1:** PTY subprocess uses `proc.exitstatus` (pexpect) instead of missing `proc.close_status`
+- **P1:** Fixed `proc.before` potential `None` in pexpect output capture
+
+### Changed
+- Frontend bundled with updated `App.tsx` (rollback fix + query-param tag)
+- `web/dist/` assets rebuilt and embedded in wheel
+
 ## [0.3.0] - 2026-07-12
 
 ### Added
