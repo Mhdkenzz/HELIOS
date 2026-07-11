@@ -1,15 +1,17 @@
-"""Git snapshot & rollback with package.json / LICENSE guard."""
+"""
+Helios Snapshot — Git tagging, guarded rollback, and housekeeping.
+"""
 
 from __future__ import annotations
 
-import json
+import re
 import subprocess
-import time
 from pathlib import Path
 
-from helios.schemas import SnapshotInfo
+from .schemas import SnapshotInfo
+from . import TAG_RE_PATTERN, PROTECTED_FILES
 
-PROTECTED_FILES = {"package.json", "package-lock.json", "yarn.lock", "LICENSE", "LICENSE.md"}
+TAG_RE = re.compile(TAG_RE_PATTERN)
 
 
 class SnapshotError(Exception):
@@ -17,84 +19,146 @@ class SnapshotError(Exception):
 
 
 class SnapshotManager:
-    """Takes git snapshots and performs guarded rollbacks."""
+    """Manages Git snapshots and rollbacks for a project directory."""
 
     def __init__(self, root: Path) -> None:
-        self.root = root.resolve()
-        self._require_git()
+        self.root = Path(root).resolve()
+        if not self._is_git_repo():
+            raise SnapshotError("Not a git repository")
 
-    # ── internals ────────────────────────────────────────────────────────
+    def snapshot(self, tag: str = "") -> SnapshotInfo:
+        """Create a tagged snapshot of the current working tree."""
+        if not tag:
+            tag = self._generate_tag()
+        else:
+            tag = tag.strip()
 
-    def _require_git(self) -> None:
-        if not (self.root / ".git").exists():
-            raise SnapshotError(f"Not a git repository: {self.root}. Run `git init` first.")
+        subprocess.run(
+            ["git", "tag", tag],
+            cwd=str(self.root),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=str(self.root),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", f"snapshot: {tag}", "--allow-empty"],
+            cwd=str(self.root),
+            capture_output=True,
+        )
+        return SnapshotInfo(tag=tag, root=str(self.root))
 
-    def _git(self, *args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["git", "-C", str(self.root), *args],
+    def rollback(self, tag: str) -> str:
+        """Reset to a tagged snapshot. Returns new HEAD SHA."""
+        if not re.match(TAG_RE_PATTERN, tag):
+            raise SnapshotError(
+                f"Invalid tag name '{tag}'. Must match {TAG_RE_PATTERN}"
+            )
+        self._validate_rollback(tag)
+
+        subprocess.run(
+            ["git", "reset", "--hard", tag],
+            cwd=str(self.root),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "clean", "-fdx"],
+            cwd=str(self.root),
+            capture_output=True,
+        )
+
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(self.root),
             capture_output=True,
             text=True,
             check=True,
-        )
-
-    @property
-    def _is_dirty(self) -> bool:
-        return bool(self._git("status", "--porcelain").stdout.strip())
-
-    def _current_commit(self) -> str:
-        return self._git("rev-parse", "HEAD").stdout.strip()
-
-    def _branch(self) -> str:
-        return self._git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-
-    # ── public API ───────────────────────────────────────────────────────
-
-    def snapshot(self) -> SnapshotInfo:
-        """Create a tagged snapshot. Returns SnapshotInfo."""
-        commit = self._current_commit()
-        branch = self._branch()
-        tag = f"helios-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
-
-        if self._is_dirty:
-            # Stash dirty state, tag clean commit
-            self._git("stash", "push", "-m", f"helios-snapshot-{tag}")
-        else:
-            # Tag the current commit
-            self._git("tag", tag)
-
-        return SnapshotInfo(tag=tag, commit=commit, branch=branch, ts=time.time())
-
-    def rollback(self, tag: str) -> str:
-        """
-        Hard-reset to *tag*, clean untracked files.
-
-        Safety: refuses if any protected file has been created/modified
-        since the tag was created.
-        """
-        # Guard
-        changed = self._git("diff", "--name-only", tag, "--").stdout.strip().splitlines()
-        conflicts = set(changed) & PROTECTED_FILES
-        if conflicts:
-            raise SnapshotError(
-                f"Rollback blocked — protected files changed since {tag}: {conflicts}. "
-                f"Stash or commit them first."
-            )
-
-        # Reset
-        self._git("reset", "--hard", tag)
-        self._git("clean", "-fdx")
-
-        # Pop stash if one exists (clean up after ourselves)
-        stash_list = self._git("stash", "list", "--format=%gd %gs").stdout
-        for line in stash_list.splitlines():
-            if "helios-snapshot" in line:
-                ref = line.split(":")[0].strip()
-                self._git("stash", "pop", ref)
-                self._git("stash", "drop", ref)
-                break
-
-        return self._git("rev-parse", "--short", "HEAD").stdout.strip()
+        ).stdout.strip()
+        return sha
 
     def diff(self, path: str = ".") -> str:
-        """Return `git diff` for *path* (relative to root)."""
-        return self._git("diff", "--", str(path)).stdout
+        """Return git diff for a given file/dir relative to HEAD."""
+        result = subprocess.run(
+            ["git", "diff", "HEAD", "--", path],
+            cwd=str(self.root),
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout
+
+    def list_tags(self) -> list[str]:
+        """List all Helios snapshot tags, newest first."""
+        result = subprocess.run(
+            ["git", "tag", "--list", "helios-*", "--sort", "-version:refname"],
+            cwd=str(self.root),
+            capture_output=True,
+            text=True,
+        )
+        return [t.strip() for t in result.stdout.splitlines() if t.strip()]
+
+    def purge(
+        self,
+        keep: int = 10,
+        delete_tags: bool = True,
+        delete_html: bool = True,
+    ) -> dict[str, object]:
+        """Purge old snapshots and reclaim disk space."""
+        tags = self.list_tags()
+        to_delete = tags[keep:]
+        deleted_tags = 0
+        deleted_html = 0
+
+        if delete_tags and to_delete:
+            for tag in to_delete:
+                subprocess.run(
+                    ["git", "tag", "-d", tag],
+                    cwd=str(self.root),
+                    capture_output=True,
+                )
+                deleted_tags += 1
+
+        if delete_html:
+            for f in self.root.glob("*-run-*.html"):
+                f.unlink(missing_ok=True)
+                deleted_html += 1
+
+        return {"deleted_tags": deleted_tags, "deleted_html": deleted_html}
+
+    def _is_git_repo(self) -> bool:
+        try:
+            r = subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                cwd=str(self.root),
+                capture_output=True,
+                text=True,
+            )
+            return r.returncode == 0
+        except Exception:
+            return False
+
+    def _validate_rollback(self, tag: str) -> None:
+        """Refuse rollback if protected files changed since the tag."""
+        for fname in PROTECTED_FILES:
+            fp = self.root / fname
+            if not fp.exists():
+                continue
+            result = subprocess.run(
+                ["git", "diff", tag, "--", fname],
+                cwd=str(self.root),
+                capture_output=True,
+                text=True,
+            )
+            if result.stdout.strip():
+                raise SnapshotError(
+                    f"protected files changed: '{fname}' modified since snapshot {tag}"
+                )
+
+    def _generate_tag(self) -> str:
+        from datetime import datetime, timezone
+
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return f"helios-{ts}"

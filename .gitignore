@@ -11,6 +11,8 @@ __pycache__/
 # Node
 web/node_modules/
 web/dist/
+web/package-lock.json
+web/tsconfig.tsbuildinfo
 
 # Helios outputs
 *-run-*.html

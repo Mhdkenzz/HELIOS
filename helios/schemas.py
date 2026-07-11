@@ -1,39 +1,50 @@
-"""Shared event schema for Helios."""
+"""
+Helios Schemas — Pydantic models for events and snapshot metadata.
+"""
 
-from __future__ import annotations
-
-from datetime import datetime, timezone
-from typing import Literal
+import time
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-EventTypes = Literal["cmd", "file", "alert", "system"]
+# ── Core event model ────────────────────────────────────────────────────────
 
 
 class Event(BaseModel):
-    """A single timeline event."""
+    """Represents a single traced event (command, file change, alert, etc.)."""
 
-    ts: float = Field(default_factory=lambda: datetime.now(timezone.utc).timestamp())
-    type: EventTypes = "system"
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    type: str
     body: dict[str, Any] = Field(default_factory=dict)
+    ts: float = Field(default_factory=lambda: time.time())
 
-    # ── helpers ────────────────────────────────────────────────────────
+    # ── Serialization ───────────────────────────────────────────────────
 
-    @property
-    def iso(self) -> str:
-        return datetime.fromtimestamp(self.ts, tz=timezone.utc).isoformat()
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict for JSON / WebSocket transmission."""
+        d: dict[str, Any] = {"type": self.type, "ts": self.ts}
+        if self.body:
+            d["body"] = self.body
+        return d
 
-    def serialise(self) -> dict:
-        return self.model_dump(mode="json")
+    def serialise(self) -> dict[str, Any]:
+        """Alias for ``to_dict`` (backward compat)."""
+        return self.to_dict()
+
+
+# ── Snapshot metadata ───────────────────────────────────────────────────────
 
 
 class SnapshotInfo(BaseModel):
-    """Metadata about a git snapshot."""
+    """Lightweight metadata about a saved snapshot."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     tag: str
-    commit: str
-    branch: str
-    ts: float
-    protected: bool = False  # True when package.json or LICENSE changed
+    ts: float = Field(default_factory=lambda: time.time())
+    note: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"tag": self.tag, "ts": self.ts, "note": self.note}

@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "helios"
-version = "0.1.0"
+version = "0.2.0"
 description = "Lightweight watchdog + replay tool for AI coding agents"
 license = "MIT"
 requires-python = ">=3.10"
@@ -13,7 +17,6 @@ dependencies = [
     "psutil>=5.9",
     "pydantic>=2.5",
     "watchdog>=4.0",
-    "ptyprocess>=0.7",
 ]
 
 [project.optional-dependencies]
@@ -21,16 +24,17 @@ dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.23",
     "httpx>=0.27",
-    "starlette>=0.38",
-    "uvicorn[standard]>=0.30",
+    "ruff>=0.4",
 ]
 
 [project.scripts]
 helios = "helios.cli:app"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 include = ["helios*"]
 
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

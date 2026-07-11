@@ -4,18 +4,44 @@
 
 * { box-sizing: border-box; }
 
+:root {
+  /* Dark mode (default) — Helios midnight */
+  --bg-primary: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-hover: #334155;
+  --border: #334155;
+  --text-primary: #f1f5f9;
+  --text-dim: #64748b;
+  --accent: #22d3ee;
+  --accent-bg: rgba(34, 211, 238, 0.1);
+}
+
+/* Light mode tokens (unused until toggle added) */
+:root.light {
+  --bg-primary: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-hover: #f1f5f9;
+  --border: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-dim: #64748b;
+  --accent: #0284c7;
+  --accent-bg: rgba(2, 132, 199, 0.1);
+}
+
 body {
   margin: 0;
   font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #0f172a; }
-::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #475569; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
 .scrollbar-thin::-webkit-scrollbar { width: 4px; }
-.scrollbar-thin::-webkit-scrollbar-thumb { background: #1e293b; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--border); }
 
 /* Preformatted text */
 pre {

@@ -1,0 +1,9 @@
+include README.md
+include LICENSE
+recursive-include helios *.py
+recursive-include helios/web *
+recursive-include web dist *
+global-exclude __pycache__
+global-exclude *.pyc
+global-exclude .gitignore
+global-exclude .DS_Store
