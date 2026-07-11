@@ -1,0 +1,10 @@
+services:
+  helios:
+    build: .
+    ports:
+      - "6767:6767"
+    volumes:
+      - .:/app
+    environment:
+      - WATCH_DIR=/app
+    command: run -- echo "hello from docker"

@@ -1,0 +1,21 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+.venv/
+
+# Node
+web/node_modules/
+web/dist/
+
+# Helios
+*-run-*.html
+helios.egg-info/
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+*.swp
