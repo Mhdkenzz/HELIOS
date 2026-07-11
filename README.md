@@ -4,51 +4,50 @@ Lightweight watchdog + replay tool for AI coding agents.
 
 **Watch what your agent does. Replay it. Roll back when it breaks.**
 
-[![CI](https://github.com/yourorg/helios/actions/workflows/ci.yml/badge.svg)](https://github.com/yourorg/helios/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/helios.svg)](https://pypi.org/project/helios/)
-[![Python 3.10+](https://img.shields.io/pypi/pyversions/helios.svg)](https://pypi.org/project/helios/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![PyPI](https://img.shields.io/pypi/v/helios?color=blue&label=PyPI)
+![CI](https://github.com/Mhdkenzz/HELIOS/actions/workflows/ci.yml/badge.svg)
+![Python 3.10+](https://img.shields.io/pypi/pyversions/helios?color=green)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+![Downloads](https://img.shields.io/pypi/dm/helios?color=orange)
 
 ---
+
+> *"Helios" — the sun god who sees everything your agent does.*
 
 ## Quick Start (30 seconds)
 
 ```bash
-# One-step install — everything included
+# One-step install — everything bundled, no npm required
 pipx install helios
 
-# Go to a git repo and run your agent under Helios
+# Run your agent under Helios monitoring
 cd ~/my-project
 helios run -- your-agent-command --arg value
 
-# Watch the live dashboard (opens automatically)
-#    → http://localhost:6767
-
-# When done, a standalone HTML replay is auto-generated:
-#    run-20250711-143022.html
+# Watch live at http://localhost:6767
 ```
 
-That's it. Helios will:
+Helios will:
 
 | Step | What happens |
 |------|-------------|
-| `helios run -- <cmd>` | Tags the current commit as `helios-<iso-utc>` |
+| `helios run -- <cmd>` | Tags the current commit as `helios-YYYYMMDDTHHMMSSZ` |
 | During run | Shell I/O, file CRUD, and CPU/RAM are captured via a thread-safe event bus |
-| Dashboard | WebSocket streams events to a React timeline at `localhost:6767` |
-| Exit | Auto-generates a **self-contained HTML replay** file |
-| Rollback | `git reset --hard <tag>` + `git clean -fdx`, guarded against `package.json`/`LICENSE` overwrite |
+| Live dashboard | WebSocket streams events to a React timeline at `localhost:6767` |
+| On exit | Auto-generates a **self-contained HTML replay** file |
+| Rollback | `git reset --hard <tag>` + `git clean -fdx`, guarded against overwrite of `LICENSE`, `package.json`, `helios.toml`, `pyproject.toml` |
 
 ## Commands
 
 ```bash
-helios run -- <command>           # Run and record a command
-helios run -- --dry-run <cmd>     # Record without executing (safe preview)
-helios run -- --deny rm,git      # Block dangerous commands
-helios run -- --allow npm,node    # Only allow specific commands
+helios run -- <command>              # Run and record a command
+helios run -- --dry-run <cmd>        # Record events without executing (safe preview)
+helios run -- --deny rm,git          # Block dangerous commands
+helios run -- --allow npm,node,python # Only allow specific commands
 
-helios dashboard                  # Launch web UI only
-helios prune --keep 10            # Delete old snapshots
-helios info                       # Show setup info
+helios dashboard                     # Launch web UI at :6767
+helios prune --keep 10               # Delete old snapshots and replay files
+helios info                          # Show version and config summary
 ```
 
 ## Options
@@ -61,86 +60,66 @@ helios info                       # Show setup info
 | `--dry-run` | off | Record events without executing commands |
 | `--deny` | `[]` | Comma-separated commands to block |
 | `--allow` | `[]` | Comma-separated commands to permit (bypass deny) |
-| `--rollback-token` | `""` | Shared secret for `/rollback` endpoint |
+| `--rollback-token` | `""` | Shared secret for `/rollback` auth |
 | `--no-dashboard` | off | Run without launching the UI |
 | `--verbose`, `-v` | off | Debug logging |
 
-## Cross-Platform Notes
-
-| Platform | Notes |
-|----------|-------|
-| **Linux** | Full support — uses PTY for terminal I/O |
-| **macOS** | Full support — uses PTY for terminal I/O |
-| **Windows** | ConPTY support via `pywinpty`; subprocess fallback |
-
-## Architecture
-
-```
-helios/
-├── cli.py                  # Typer CLI: helios run | dashboard | prune | info
-├── schemas.py              # Pydantic event & snapshot models
-├── snapshot.py             # Git snapshot + guarded rollback + prune
-├── recorder.py             # Event bus, PTY tracer, watchdog watcher, metrics
-├── backend.py              # FastAPI: /ws, /diff, /rollback, static frontend
-├── __init__.py             # Default config (SITE), version
-├── web/                    # Bundled React frontend (Vite + Tailwind)
-│   ├── index.html
-│   ├── src/
-│   │   ├── main.tsx        # Entry point
-│   │   └── App.tsx         # Timeline + diff modal + restore bar + virtual scroll
-│   ├── package.json
-│   ├── vite.config.ts
-│   ├── tailwind.config.ts
-│   └── tsconfig.json
-├── tests/
-│   └── test_helios.py      # Pytest integration (CI on ubuntu/mac/windows)
-├── Makefile
-├── Dockerfile + docker-compose.yml
-└── README.md
-```
-
-## Event Schema
-
-Every event is a small JSON object:
-
-```json
-{ "ts": 1752234567.123, "type": "cmd"|"file"|"alert"|"system", "body": { ... } }
-```
-
-| Type  | Body fields                                              | Example                                         |
-|-------|----------------------------------------------------------|-------------------------------------------------|
-| `cmd` | `command`, `output`, `exit_code`, `elapsed_s`, `mode`  | `{"command":"npm test","exit_code":0}`          |
-| `file`| `action`, `path` (or `from`/`to`)                       | `{"action":"modified","path":"src/app.tsx"}`   |
-| `alert`| `msg`                                                  | `{"msg":"disk > 90%"}`                          |
-| `system`| `msg`                                                 | `{"msg":"recorder.start"}`                      |
-
 ## Configuration
 
-Create a `helios.toml` in your project root to customize:
+Create `helios.toml` in your project root (see [`helios.toml.example`](helios.toml.example)):
 
 ```toml
 [helios]
 host = "0.0.0.0"
 port = 6767
 dry_run = false
-deny_commands = ["rm", "git push"]
-allow_commands = ["npm", "node", "python"]
-rollback_token = "change-me-in-production"
-debounce_ms = 50
-max_events = 50000
+deny_commands = ["rm -rf /", "git push --force"]
+allow_commands = []
+rollback_token = ""
+theme = "dark"
+accent_color = "#60a5fa"
 ```
 
 Or use environment variables:
 
 ```bash
-export HELIOS_ALLOW_ALL=0                    # disable all if allow-list set
-export HELIOS_ROLLBACK_TOKEN="your-secret"   # auth for /rollback
+export HELIOS_DENY="rm,git push"
+export HELIOS_ALLOW="npm,node,python"
+export HELIOS_ROLLBACK_TOKEN="your-secret-token"
+```
+
+## Demo
+
+![Dashboard](./docs/demo-dashboard.png)
+![Rollback Confirmation](./docs/demo-rollback.png)
+
+## Cross-Platform Notes
+
+| Platform | Support |
+|----------|---------|
+| Linux | Full — uses stdlib `pty` or `pexpect` |
+| macOS | Full — uses stdlib `pty` or `pexpect` |
+| Windows | Partial — uses `pywinpty`/ConPTY with `pip install helios[windows-pty]`, falls back to subprocess |
+
+## Architecture
+
+- **CLI** (`helios/cli.py`) — Typer commands: `run`, `dashboard`, `prune`, `info`
+- **Backend** (`helios/backend.py`) — FastAPI + WebSocket server with embedded React frontend
+- **Recorder** (`helios/recorder.py`) — EventBus, PTY subprocess tracer, file-watch, metrics
+- **Snapshot** (`helios/snapshot.py`) — Git tagging, guarded rollback, housekeeping
+- **Frontend** (`web/`) — React + Vite + Tailwind, bundled into Python wheel
+
+## Docker
+
+```bash
+docker compose up --build
+# Backend + frontend on http://localhost:6767
 ```
 
 ## Dev Commands
 
 ```bash
-make dev          # backend (uvicorn --reload) + frontend (vite dev)
+make dev          # Backend (uvicorn) + frontend (vite dev)
 make install      # pip install -e ".[dev]" + npm install
 make test         # pytest tests/ -v
 make lint         # syntax check
@@ -150,27 +129,27 @@ make clean        # remove caches
 Or manually:
 
 ```bash
-# Terminal 1 — backend + hot-reload
-uvicorn helios.cli:app --reload --port 6767
+# Terminal 1
+uvicorn helios.backend:create_app --reload --port 6767
 
-# Terminal 2 — frontend
+# Terminal 2
 cd web && npm run dev
 ```
 
-## Docker
+## Docs
 
-```bash
-docker compose up --build
-# Backend on :6767, frontend on :5173
-```
+- [Installation](docs/installation.md)
+- [Usage Guide](docs/usage.md)
+- [Architecture](docs/architecture.md)
+- [Configuration](docs/configuration.md)
+- [Plugin API](docs/plugin-api.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [FAQ](docs/faq.md)
+- [Contributing](docs/contributing.md)
 
-## Stretch Goals (parking lot)
+## Changelog
 
-- [ ] GPU/RAM charts in dashboard
-- [ ] VS Code extension
-- [ ] Signed snapshots (GPG/SSH)
-- [x] ~~Windows PTY support~~ → ConPTY via pywinpty
-- [ ] Binary distribution
+See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

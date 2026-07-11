@@ -14,9 +14,14 @@ web/dist/
 web/package-lock.json
 web/tsconfig.tsbuildinfo
 
+# Build artifacts
+dist/
+build/
+*.egg-info/
+*.whl
+
 # Helios outputs
 *-run-*.html
-helios.egg-info/
 
 # IDE
 .idea/

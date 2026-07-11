@@ -1,9 +1,30 @@
 include README.md
 include LICENSE
+include CHANGELOG.md
+include helios.toml.example
+include Makefile
+include Dockerfile
+include MANIFEST.in
+include conftest.py
+include copy_web.py
+
 recursive-include helios *.py
 recursive-include helios/web *
+
 recursive-include web dist *
+recursive-include web package.json
+recursive-include web vite.config.ts
+recursive-include web tsconfig*.json
+recursive-include web src *.tsx *.ts *.css
+recursive-include web/assets *
+
+recursive-include docs *
+recursive-include .github *
+
 global-exclude __pycache__
 global-exclude *.pyc
 global-exclude .gitignore
 global-exclude .DS_Store
+global-exclude node_modules
+global-exclude *.egg-info
+prune web/node_modules
