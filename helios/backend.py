@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -81,7 +81,7 @@ async def get_diff(path: str = "."):
 # ── Rollback endpoint ─────────────────────────────────────────────────────
 
 @app.post("/rollback")
-async def post_rollback(tag: str):
+async def post_rollback(tag: str = Body(embed=True)):
     """Roll back to snapshot *tag*. Returns new HEAD short hash."""
     snap: SnapshotManager | None = _run_state.get("snapshot_manager")
     if not snap:

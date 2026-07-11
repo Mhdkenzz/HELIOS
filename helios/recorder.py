@@ -139,6 +139,9 @@ class Recorder:
 
     async def _sample_metrics(self) -> None:
         proc = psutil.Process()
+        # First call always returns 0.0 — prime it so the loop has a baseline.
+        proc.cpu_percent(interval=None)
+        await asyncio.sleep(0.1)
         while self.running:
             try:
                 cpu = proc.cpu_percent(interval=None)
@@ -172,7 +175,7 @@ class Recorder:
             cwd=str(self.cwd),
         )
 
-        def _drain() -> None:
+        def _drain(ready: threading.Event) -> None:
             while True:
                 try:
                     chunk = child.read_nonblocking(4096, timeout=0.25)
@@ -183,20 +186,26 @@ class Recorder:
                 except Exception:
                     break
                 if not child.isalive():
-                    # one final non-blocking drain
+                    # one final non-blocking drain after child exits
                     try:
-                        tail = child.read_nonblocking(4096, timeout=0.1)
-                        if tail:
-                            self.bus.publish(Event(type="cmd", body={"output": tail}))
+                        while True:
+                            tail = child.read_nonblocking(4096, timeout=0.1)
+                            if tail:
+                                self.bus.publish(Event(type="cmd", body={"output": tail}))
+                            else:
+                                break
                     except Exception:
                         pass
                     break
+            ready.set()
 
-        thr = threading.Thread(target=_drain, daemon=True)
+        ready = threading.Event()
+        thr = threading.Thread(target=_drain, args=(ready,), daemon=True)
         thr.start()
 
         rc = child.wait()
-        thr.join(timeout=2)
+        # Drain thread signals it has consumed all output (including post-exit)
+        ready.wait(timeout=2)
         elapsed = time.monotonic() - t0
         self.bus.publish(Event(type="cmd", body={"exit_code": rc, "elapsed_s": round(elapsed, 3), "mode": "pty"}))
         return rc

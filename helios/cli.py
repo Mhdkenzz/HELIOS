@@ -184,10 +184,10 @@ function App(){{
     h('h1',{{className:"text-xl font-bold mb-4 text-cyan-400"}},"🔆 Helios Replay — "+DATA.run_id),
     h('div',{{className:"grid grid-cols-3 gap-4 mb-4"}},
       [["Events",DATA.stats.num_events],["Peak RSS",DATA.stats.peak_rss_mb.toFixed(1)+" MB"],["Mean CPU",DATA.stats.mean_cpu_pct.toFixed(1)+"%"]]
-        .map(function(l,v){{
+        .map(function(l){{
           return h('div',{{className:"bg-slate-900 rounded p-3 border border-slate-700"}},
-            h('div',{{className:"text-xs text-slate-500 uppercase"}}),l)
-            ,h('div',{{className:"text-lg font-bold"}}),v);
+            h('div',{{className:"text-xs text-slate-500 uppercase"}},l[0]),
+            h('div',{{className:"text-lg font-bold"}},l[1]));
         }})),
     h('div',{{className:"bg-slate-900 rounded border border-slate-700 overflow-hidden"}},
       h('div',{{className:"p-2 text-sm text-slate-400 border-b border-slate-700"}},"Timeline"),
